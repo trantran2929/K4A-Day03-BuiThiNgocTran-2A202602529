@@ -51,7 +51,7 @@ Dán 1 đoạn trích xuất log tiêu biểu từ file `docs/trace_waterfall.js
         "application_status": "RECEIVED"
       }
     },
-    "decision_latency_ms": 1217.0,
+    "decision_latency_ms": 1147.58,
     "model": "gpt-4o-mini",
     "usage": {
       "input_tokens": 861,

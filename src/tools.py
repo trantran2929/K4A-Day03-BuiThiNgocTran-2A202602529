@@ -90,21 +90,6 @@ TOOLS_SCHEMA = [
             "required": [
                 "full_name", "phone", "ticket_type"
             ],
-            "allOf": [
-                {
-                    "if": {
-                        "properties": {
-                            "ticket_type": {
-                                "const": "one_route"
-                            }
-                        },
-                        "required": ["ticket_type"]
-                    },
-                    "then": {
-                        "required": ["route_id"]
-                    }
-                }
-            ],
             "additionalProperties": False
         }
     }
