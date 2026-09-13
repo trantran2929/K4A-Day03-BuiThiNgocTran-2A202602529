@@ -94,10 +94,24 @@ class MockOfflineProvider(BaseLLMProvider):
             "đăng ký" in prompt_lower
             and "vé tháng" in prompt_lower
         ):
-            return self._handle_monthly_pass(prompt)
+            result = self._handle_monthly_pass(prompt)
+            result["model"] = self.model_name
+            result["usage"] = {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 0
+            }
+            return result
 
         if self._is_route_query(prompt):
-            return self._handle_route_search(prompt)
+            result = self._handle_route_search(prompt)
+            result["model"] = self.model_name
+            result["usage"] = {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 0
+            }
+            return result
 
         return {
             "type": "text",
@@ -109,7 +123,13 @@ class MockOfflineProvider(BaseLLMProvider):
             ),
             "thought": (
                 "Đây là câu hỏi chung, không cần gọi Tool."
-            )
+            ),
+            "model": self.model_name,
+            "usage": {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 0
+            }
         }
 
     def _handle_route_search(
@@ -282,6 +302,25 @@ class GeminiProvider(BaseLLMProvider):
                 config=config
             )
 
+            usage_metadata = getattr(response, "usage_metadata", None)
+            usage = {
+                "input_tokens": getattr(
+                    usage_metadata,
+                    "prompt_token_count",
+                    0
+                ) or 0,
+                "output_tokens": getattr(
+                    usage_metadata,
+                    "candidates_token_count",
+                    0
+                ) or 0,
+                "total_tokens": getattr(
+                    usage_metadata,
+                    "total_token_count",
+                    0
+                ) or 0
+            }
+
             # Kiểm tra xem Gemini có trả về Tool Call không
             if response.function_calls:
                 call = response.function_calls[0]
@@ -290,13 +329,17 @@ class GeminiProvider(BaseLLMProvider):
                     "type": "tool_call",
                     "tool_name": call.name,
                     "arguments": args,
-                    "thought": f"Gemini quyết định gọi công cụ '{call.name}' với tham số: {json.dumps(args, ensure_ascii=False)}"
+                    "thought": f"Gemini quyết định gọi công cụ '{call.name}' với tham số: {json.dumps(args, ensure_ascii=False)}",
+                    "model": self.model_name,
+                    "usage": usage
                 }
             else:
                 return {
                     "type": "text",
                     "content": response.text or "",
-                    "thought": "Gemini phản hồi trực tiếp bằng văn bản (không cần gọi công cụ)."
+                    "thought": "Gemini phản hồi trực tiếp bằng văn bản (không cần gọi công cụ).",
+                    "model": self.model_name,
+                    "usage": usage
                 }
 
         except Exception as e:
@@ -360,6 +403,12 @@ class OpenAIProvider(BaseLLMProvider):
             )
 
             msg = response.choices[0].message
+            response_usage = response.usage
+            usage = {
+                "input_tokens": response_usage.prompt_tokens if response_usage else 0,
+                "output_tokens": response_usage.completion_tokens if response_usage else 0,
+                "total_tokens": response_usage.total_tokens if response_usage else 0
+            }
             if msg.tool_calls:
                 call = msg.tool_calls[0]
                 args = json.loads(call.function.arguments) if call.function.arguments else {}
@@ -367,13 +416,17 @@ class OpenAIProvider(BaseLLMProvider):
                     "type": "tool_call",
                     "tool_name": call.function.name,
                     "arguments": args,
-                    "thought": f"OpenAI quyết định gọi công cụ '{call.function.name}' với tham số: {json.dumps(args, ensure_ascii=False)}"
+                    "thought": f"OpenAI quyết định gọi công cụ '{call.function.name}' với tham số: {json.dumps(args, ensure_ascii=False)}",
+                    "model": self.model_name,
+                    "usage": usage
                 }
             else:
                 return {
                     "type": "text",
                     "content": msg.content or "",
-                    "thought": "OpenAI phản hồi trực tiếp bằng văn bản (không cần gọi công cụ)."
+                    "thought": "OpenAI phản hồi trực tiếp bằng văn bản (không cần gọi công cụ).",
+                    "model": self.model_name,
+                    "usage": usage
                 }
         except Exception as e:
             print(f"⚠️ [OpenAI API Warning]: Không thể kết nối live API ({str(e)}). Tự động fallback về Mock.")

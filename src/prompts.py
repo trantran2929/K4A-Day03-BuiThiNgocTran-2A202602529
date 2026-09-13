@@ -53,6 +53,29 @@ QUY TẮC XỬ LÝ:
 4. Vé one_route bắt buộc phải có route_id.
    Vé all_routes không yêu cầu route_id.
 
+QUY TẮC ÁNH XẠ LOẠI VÉ:
+
+- Cụm từ "một tuyến", "vé một tuyến" hoặc có yêu cầu đăng ký
+  cho một mã tuyến cụ thể phải được ánh xạ thành
+  ticket_type="one_route".
+
+- Cụm từ "liên tuyến", "vé liên tuyến" hoặc "tất cả tuyến"
+  phải được ánh xạ thành ticket_type="all_routes".
+
+- Không hỏi lại loại vé nếu người dùng đã dùng các cụm từ trên.
+
+Ví dụ:
+"Đăng ký vé tháng một tuyến E01 cho Nguyễn Văn An,
+số điện thoại 0912345678"
+
+Phải gọi:
+register_monthly_pass({
+  "full_name": "Nguyễn Văn An",
+  "phone": "0912345678",
+  "ticket_type": "one_route",
+  "route_id": "E01"
+})
+
 5. Nếu thiếu tham số bắt buộc, hãy hỏi người dùng bổ sung.
    Không gọi Tool với dữ liệu tự suy đoán.
 

@@ -15,6 +15,7 @@ import json
 import os
 import sys
 import time
+from typing import Callable, Optional
 from dotenv import load_dotenv
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -62,11 +63,63 @@ def save_waterfall_trace(trace_data: list):
     print(f"📊 [OBSERVABILITY]: Đã lưu {len(trace_data)} sự kiện Waterfall Trace tại '{trace_path}'!")
 
 
-def run_baseline_chatbot(user_query: str, provider):
-    """Chạy Chatbot gốc (Cấp 2) không có công cụ gọi Tool"""
-    print(f"\n💬 [CHATBOT BASELINE] Câu hỏi: {user_query}")
-    response = provider.generate(user_query, system_prompt=CHATBOT_BASELINE_PROMPT)
+def run_baseline_chatbot(
+    user_query: str,
+    provider
+) -> dict:
+    """
+    Chạy Chatbot Baseline chỉ bằng LLM.
+
+    Chatbot không nhận Tool Schema và không gọi MCP Server.
+    """
+
+    print(
+        f"\n💬 [CHATBOT BASELINE] "
+        f"Câu hỏi: {user_query}"
+    )
+
+    start_time = time.time()
+
+    response = provider.generate(
+        user_query,
+        system_prompt=CHATBOT_BASELINE_PROMPT
+    )
+
+    latency_ms = round(
+        (time.time() - start_time) * 1000,
+        2
+    )
+
+    result = {
+        "mode": "CHATBOT_BASELINE",
+        "query": user_query,
+        "output": response,
+        "tool_called": False,
+        "latency_ms": latency_ms,
+        "model": getattr(
+            provider,
+            "model_name",
+            provider.__class__.__name__
+        )
+    }
+
     print(f"🤖 Chatbot phản hồi:\n{response}")
+    print("🛠️ Tool được gọi: Không")
+    print(f"⏱️ Latency: {latency_ms} ms")
+
+    return result
+
+def extract_final_answer(trace_logs: list) -> str:
+    """Lấy câu trả lời cuối cùng từ trace của ReAct Agent."""
+
+    for event in reversed(trace_logs):
+        if event.get("action_type") == "FINAL_ANSWER":
+            return event.get(
+                "output",
+                "Không có câu trả lời."
+            )
+
+    return "Không tìm thấy Final Answer trong trace."
 
 def build_final_answer(tool_name: str, observation: dict) -> str:
     """Tổng hợp Observation của MCP Server thành câu trả lời VinBus."""
@@ -179,7 +232,12 @@ def build_final_answer(tool_name: str, observation: dict) -> str:
         f"{json.dumps(observation, ensure_ascii=False)}"
     )
 
-def run_react_agent(user_query: str, provider, mcp_server: MCPVinBusServer) -> list:
+def run_react_agent(
+    user_query: str,
+    provider,
+    mcp_server: MCPVinBusServer,
+    event_callback: Optional[Callable[[dict], None]] = None
+) -> list:
     """
     [REACT AGENT LOOP] Thực thi vòng lặp Thought -> Action -> Observation với MCP Server
     Trả về danh sách trace log của phiên thực thi.
@@ -189,6 +247,15 @@ def run_react_agent(user_query: str, provider, mcp_server: MCPVinBusServer) -> l
     step = 0
     trace_logs = []
     tools_list = mcp_server.list_tools()
+
+    def emit(stage: str, message: str, **details):
+        """Phát sự kiện tiến trình cho giao diện nếu có callback."""
+        if event_callback:
+            event_callback({
+                "stage": stage,
+                "message": message,
+                **details
+            })
     
     while step < MAX_ITERATIONS:
         step += 1
@@ -201,6 +268,17 @@ def run_react_agent(user_query: str, provider, mcp_server: MCPVinBusServer) -> l
         
         thought = llm_response.get("thought", "Đang suy luận...")
         print(f"🧠 [Thought]: {thought}")
+        usage = llm_response.get("usage", {})
+        model_name = llm_response.get(
+            "model",
+            getattr(provider, "model_name", "unknown")
+        )
+        emit(
+            "reasoning",
+            thought,
+            usage=usage,
+            model=model_name
+        )
         
         # Trường hợp 1: LLM quyết định trả lời bằng văn bản trực tiếp
         if llm_response.get("type") == "text":
@@ -212,8 +290,11 @@ def run_react_agent(user_query: str, provider, mcp_server: MCPVinBusServer) -> l
                 "action_type": "FINAL_ANSWER",
                 "thought": thought,
                 "output": final_content,
-                "latency_ms": latency_ms
+                "latency_ms": latency_ms,
+                "model": model_name,
+                "usage": usage
             })
+            emit("final", final_content)
             break
             
         # Trường hợp 2: LLM đề xuất gọi Tool (Action)
@@ -222,6 +303,12 @@ def run_react_agent(user_query: str, provider, mcp_server: MCPVinBusServer) -> l
             arguments = llm_response.get("arguments", {})
             
             print(f"🛠️ [Action Proposed]: {tool_name}({arguments})")
+            emit(
+                "action",
+                f"Gọi công cụ {tool_name}",
+                tool_name=tool_name,
+                arguments=arguments
+            )
             
             # Thực thi Tool qua MCP Server
             mcp_result = (
@@ -253,15 +340,23 @@ def run_react_agent(user_query: str, provider, mcp_server: MCPVinBusServer) -> l
                     tool_name,
                     obs_data
                 )
+            emit(
+                "observation",
+                f"Công cụ trả trạng thái {obs_data.get('status', 'NO_DATA') if obs_data else 'NO_DATA'}",
+                observation=obs_data
+            )
             
             trace_logs.append({
                 "step": step,
                 "query": user_query,
                 "action_type": "TOOL_EXECUTION",
+                "thought": thought,
                 "tool_name": tool_name,
                 "arguments": arguments,
                 "observation": obs_data,
-                "latency_ms": latency_ms
+                "latency_ms": latency_ms,
+                "model": model_name,
+                "usage": usage
             })
             
             # Kết thúc vòng lặp sau khi hoàn tất Observation và xuất Final Answer
@@ -285,9 +380,85 @@ def run_react_agent(user_query: str, provider, mcp_server: MCPVinBusServer) -> l
                 "output": final_answer,
                 "latency_ms": 10.0
             })
+            emit("final", final_answer)
             break
 
     return trace_logs
+
+def run_comparison(
+    user_query: str,
+    provider,
+    mcp_server: MCPVinBusServer
+) -> dict:
+    """
+    Chạy cùng một câu hỏi qua:
+    1. Chatbot Baseline không có Tool.
+    2. ReAct Agent có Native Tool Calling và MCP Server.
+    """
+
+    print("\n" + "=" * 60)
+    print("📊 SO SÁNH CHATBOT BASELINE VS REACT AGENT + MCP")
+    print("=" * 60)
+    print(f"📌 Câu hỏi: {user_query}")
+
+    baseline_result = run_baseline_chatbot(
+        user_query,
+        provider
+    )
+
+    agent_trace = run_react_agent(
+        user_query,
+        provider,
+        mcp_server
+    )
+
+    agent_answer = extract_final_answer(
+        agent_trace
+    )
+
+    tool_events = [
+        event
+        for event in agent_trace
+        if event.get("action_type") == "TOOL_EXECUTION"
+    ]
+
+    tools_called = [
+        event.get("tool_name")
+        for event in tool_events
+    ]
+
+    comparison = {
+        "query": user_query,
+        "baseline": baseline_result,
+        "react_mcp_agent": {
+            "mode": "REACT_MCP_AGENT",
+            "output": agent_answer,
+            "tool_called": len(tool_events) > 0,
+            "tools": tools_called,
+            "trace": agent_trace
+        }
+    }
+
+    print("\n" + "-" * 60)
+    print("📋 KẾT QUẢ SO SÁNH")
+    print("-" * 60)
+
+    print("\n💬 CHATBOT BASELINE")
+    print(f"Câu trả lời: {baseline_result['output']}")
+    print("Tool: Không")
+
+    print("\n🤖 REACT AGENT + MCP")
+    print(f"Câu trả lời: {agent_answer}")
+    print(
+        "Tool: "
+        + (
+            ", ".join(tools_called)
+            if tools_called
+            else "Không cần gọi Tool"
+        )
+    )
+
+    return comparison
 
 
 if __name__ == "__main__":
@@ -304,8 +475,71 @@ if __name__ == "__main__":
     
     tests = load_test_cases()
     print(f"✅ Đã tải thành công {len(tests)} Test Cases thử nghiệm.\n")
-    
-    if "--interactive" in sys.argv:
+
+    if "--compare" in sys.argv:
+        print(
+            "📊 [COMPARE MODE] "
+            "Chatbot Baseline vs ReAct Agent + MCP"
+        )
+
+        all_comparisons = []
+        all_agent_traces = []
+
+        for tc in tests:
+            if tc["question"].strip().startswith("TODO"):
+                continue
+
+            print("\n" + "=" * 60)
+            print(f"🧪 [{tc['id']}] {tc['question']}")
+
+            comparison = run_comparison(
+                tc["question"],
+                provider,
+                mcp_server
+            )
+
+            comparison["test_case_id"] = tc["id"]
+            comparison["expected_behavior"] = (
+                tc["expected_behavior"]
+            )
+
+            all_comparisons.append(comparison)
+
+            all_agent_traces.extend(
+                comparison["react_mcp_agent"]["trace"]
+            )
+
+        if all_agent_traces:
+            save_waterfall_trace(all_agent_traces)
+
+        base_dir = os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__))
+        )
+
+        comparison_path = os.path.join(
+            base_dir,
+            "docs",
+            "comparison_results.json"
+        )
+
+        with open(
+            comparison_path,
+            "w",
+            encoding="utf-8"
+        ) as file:
+            json.dump(
+                all_comparisons,
+                file,
+                ensure_ascii=False,
+                indent=2
+            )
+
+        print(
+            "\n✅ Đã lưu kết quả so sánh tại "
+            f"{comparison_path}"
+        )
+
+    elif "--interactive" in sys.argv:
         print("🎮 [INTERACTIVE MODE] Trò chuyện với trợ lý VinBus:")
         print("💡 Gợi ý câu hỏi:")
         print(
@@ -364,6 +598,7 @@ if __name__ == "__main__":
         print("ℹ️ HƯỚNG DẪN SỬ DỤNG CHƯƠNG TRÌNH:")
         print("  1. Chat trực tiếp liên tục:   python src/app.py --interactive")
         print("  2. Chạy toàn bộ Test Cases:    python src/app.py --all\n")
+        print("  3. So sánh hai kiến trúc:      python src/app.py --compare")
         
         sample_query = tests[1]["question"]
 

@@ -1,25 +1,172 @@
 [
   {
     "step": 1,
-    "query": "Tìm tuyến từ VinUni đến Sân bay Nội Bài",
+    "query": "VinBus sử dụng loại phương tiện nào?",
+    "action_type": "FINAL_ANSWER",
+    "thought": "OpenAI phản hồi trực tiếp bằng văn bản (không cần gọi công cụ).",
+    "output": "VinBus sử dụng loại phương tiện xe buýt điện. Các xe buýt này được thiết kế thân thiện với môi trường, giúp giảm ô nhiễm và tiết kiệm năng lượng.",
+    "latency_ms": 6495.27,
+    "model": "gpt-4o-mini",
+    "usage": {
+      "input_tokens": 806,
+      "output_tokens": 40,
+      "total_tokens": 846
+    }
+  },
+  {
+    "step": 1,
+    "query": "Tìm tuyến VinBus từ VinUni đến Bến xe Mỹ Đình.",
     "action_type": "TOOL_EXECUTION",
+    "thought": "OpenAI quyết định gọi công cụ 'search_bus_route' với tham số: {\"origin\": \"VinUni\", \"destination\": \"Bến xe Mỹ Đình\"}",
     "tool_name": "search_bus_route",
     "arguments": {
       "origin": "VinUni",
-      "destination": "Sân bay Nội Bài"
+      "destination": "Bến xe Mỹ Đình"
     },
     "observation": {
-      "status": "NOT_FOUND",
-      "message": "Không tìm thấy tuyến VinBus trực tiếp từ 'VinUni' đến 'Sân bay Nội Bài'."
+      "status": "SUCCESS",
+      "message": "Tìm thấy 1 tuyến phù hợp.",
+      "data": [
+        {
+          "route_id": "E01",
+          "route_name": "VinUni - Bến xe Mỹ Đình",
+          "origin": "VinUni",
+          "destination": "Bến xe Mỹ Đình",
+          "journey_stops": [
+            "VinUni",
+            "Cầu Giấy",
+            "Bến xe Mỹ Đình"
+          ],
+          "operating_hours": "05:00 - 21:00",
+          "frequency": "15 phút/lượt"
+        }
+      ]
     },
-    "latency_ms": 1235.73
+    "latency_ms": 1309.34,
+    "model": "gpt-4o-mini",
+    "usage": {
+      "input_tokens": 813,
+      "output_tokens": 25,
+      "total_tokens": 838
+    }
   },
   {
     "step": 2,
-    "query": "Tìm tuyến từ VinUni đến Sân bay Nội Bài",
+    "query": "Tìm tuyến VinBus từ VinUni đến Bến xe Mỹ Đình.",
+    "action_type": "FINAL_ANSWER",
+    "thought": "Đã tổng hợp phản hồi từ MCP Server với trạng thái SUCCESS.",
+    "output": "Tìm thấy 1 tuyến phù hợp.\n- Tuyến E01: VinUni - Bến xe Mỹ Đình\n  Lộ trình: VinUni → Cầu Giấy → Bến xe Mỹ Đình\n  Giờ hoạt động: 05:00 - 21:00\n  Tần suất: 15 phút/lượt",
+    "latency_ms": 10.0
+  },
+  {
+    "step": 1,
+    "query": "Đăng ký vé tháng một tuyến E01 cho Nguyễn Văn An, số điện thoại 0912345678.",
+    "action_type": "TOOL_EXECUTION",
+    "thought": "OpenAI quyết định gọi công cụ 'register_monthly_pass' với tham số: {\"full_name\": \"Nguyễn Văn An\", \"phone\": \"0912345678\", \"ticket_type\": \"one_route\", \"route_id\": \"E01\"}",
+    "tool_name": "register_monthly_pass",
+    "arguments": {
+      "full_name": "Nguyễn Văn An",
+      "phone": "0912345678",
+      "ticket_type": "one_route",
+      "route_id": "E01"
+    },
+    "observation": {
+      "status": "SUCCESS",
+      "registration_id": "VB-0001",
+      "message": "Đăng ký vé tháng VinBus thành công.",
+      "data": {
+        "registration_id": "VB-0001",
+        "full_name": "Nguyễn Văn An",
+        "phone": "0912345678",
+        "ticket_type": "one_route",
+        "route_id": "E01",
+        "application_status": "RECEIVED"
+      }
+    },
+    "latency_ms": 1135.91,
+    "model": "gpt-4o-mini",
+    "usage": {
+      "input_tokens": 820,
+      "output_tokens": 39,
+      "total_tokens": 859
+    }
+  },
+  {
+    "step": 2,
+    "query": "Đăng ký vé tháng một tuyến E01 cho Nguyễn Văn An, số điện thoại 0912345678.",
+    "action_type": "FINAL_ANSWER",
+    "thought": "Đã tổng hợp phản hồi từ MCP Server với trạng thái SUCCESS.",
+    "output": "Đăng ký vé tháng VinBus thành công.\nMã hồ sơ: VB-0001\nHành khách: Nguyễn Văn An\nLoại vé: Vé tháng một tuyến\nTuyến đăng ký: E01\nTrạng thái: RECEIVED",
+    "latency_ms": 10.0
+  },
+  {
+    "step": 1,
+    "query": "Đăng ký vé tháng liên tuyến cho Trần Thị Bình, số điện thoại 0987654321.",
+    "action_type": "TOOL_EXECUTION",
+    "thought": "OpenAI quyết định gọi công cụ 'register_monthly_pass' với tham số: {\"full_name\": \"Trần Thị Bình\", \"phone\": \"0987654321\", \"ticket_type\": \"all_routes\"}",
+    "tool_name": "register_monthly_pass",
+    "arguments": {
+      "full_name": "Trần Thị Bình",
+      "phone": "0987654321",
+      "ticket_type": "all_routes"
+    },
+    "observation": {
+      "status": "SUCCESS",
+      "registration_id": "VB-0002",
+      "message": "Đăng ký vé tháng VinBus thành công.",
+      "data": {
+        "registration_id": "VB-0002",
+        "full_name": "Trần Thị Bình",
+        "phone": "0987654321",
+        "ticket_type": "all_routes",
+        "route_id": null,
+        "application_status": "RECEIVED"
+      }
+    },
+    "latency_ms": 1051.59,
+    "model": "gpt-4o-mini",
+    "usage": {
+      "input_tokens": 820,
+      "output_tokens": 34,
+      "total_tokens": 854
+    }
+  },
+  {
+    "step": 2,
+    "query": "Đăng ký vé tháng liên tuyến cho Trần Thị Bình, số điện thoại 0987654321.",
+    "action_type": "FINAL_ANSWER",
+    "thought": "Đã tổng hợp phản hồi từ MCP Server với trạng thái SUCCESS.",
+    "output": "Đăng ký vé tháng VinBus thành công.\nMã hồ sơ: VB-0002\nHành khách: Trần Thị Bình\nLoại vé: Vé tháng liên tuyến\nTrạng thái: RECEIVED",
+    "latency_ms": 10.0
+  },
+  {
+    "step": 1,
+    "query": "Tìm tuyến VinBus từ VinUni đến KĐT Smart City.",
+    "action_type": "TOOL_EXECUTION",
+    "thought": "OpenAI quyết định gọi công cụ 'search_bus_route' với tham số: {\"origin\": \"VinUni\", \"destination\": \"KĐT Smart City\"}",
+    "tool_name": "search_bus_route",
+    "arguments": {
+      "origin": "VinUni",
+      "destination": "KĐT Smart City"
+    },
+    "observation": {
+      "status": "NOT_FOUND",
+      "message": "Không tìm thấy tuyến VinBus trực tiếp từ 'VinUni' đến 'KĐT Smart City'."
+    },
+    "latency_ms": 1138.36,
+    "model": "gpt-4o-mini",
+    "usage": {
+      "input_tokens": 812,
+      "output_tokens": 24,
+      "total_tokens": 836
+    }
+  },
+  {
+    "step": 2,
+    "query": "Tìm tuyến VinBus từ VinUni đến KĐT Smart City.",
     "action_type": "FINAL_ANSWER",
     "thought": "Đã tổng hợp phản hồi từ MCP Server với trạng thái NOT_FOUND.",
-    "output": "Không tìm thấy tuyến VinBus trực tiếp từ 'VinUni' đến 'Sân bay Nội Bài'.",
+    "output": "Không tìm thấy tuyến VinBus trực tiếp từ 'VinUni' đến 'KĐT Smart City'.",
     "latency_ms": 10.0
   }
 ]
