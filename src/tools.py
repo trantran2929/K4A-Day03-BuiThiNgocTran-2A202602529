@@ -22,18 +22,21 @@ TOOLS_SCHEMA = [
             "properties": {
                 "origin": {
                     "type": "string",
+                    "minLength": 1,
                     "description": (
                          "Điểm xuất phát của hành khách, ví dụ: 'VinUni'."
                     )
                 },
                 "destination": {
                     "type": "string",
+                    "minLength": 1,
                     "description": (
                         "Điểm đến của hành khách, ví dụ: 'Bến xe Mỹ Đình'."
                     )
                 }
             },
-            "required": ["origin", "destination"]
+            "required": ["origin", "destination"],
+            "additionalProperties": False
         }
     },
     
@@ -55,35 +58,54 @@ TOOLS_SCHEMA = [
             "properties": {
                 "full_name": {
                     "type": "string",
+                    "minLength": 1,
                     "description": (
                         "Họ và tên hành khách, ví dụ: 'Nguyễn Văn A'."
                     )
                 },
                 "phone": {
                     "type": "string",
+                    "pattern": "^0[0-9]{9}$",
                     "description": (
                         "Số điện thoại hành khách."
                     )
                 },
                 "ticket_type": {
                     "type": "string",
+                    "enum": ["one_route", "all_routes"],
                     "description": (
-                        "Loại vé tháng: one_route là vé một tuyến, "
-                        "all_routes là vé liên tuyến."
-                    ),
-                    "enum": ["one_route", "all_routes"]
+                        "Loại vé tháng: one_route là vé tháng một tuyến, "
+                        "all_routes là vé tháng liên tuyến."
+                    )
                 },
                 "route_id":{
                     "type": "string",
+                    "pattern": "^[A-Z][0-9]{2}$",
                     "description": (
-                        "Mã tuyến xe, ví dụ: 'E01'. "
-                        "Bắt buộc đối với loại vé one_route, không bắt buộc với loại vé all_routes."
+                        "Mã tuyến VinBus, ví dụ E01. "
+                        "Bắt buộc khi ticket_type là one_route."
                     )
                 }
             },
             "required": [
                 "full_name", "phone", "ticket_type"
-            ] 
+            ],
+            "allof": [
+                {
+                    "if": {
+                        "properties": {
+                            "ticket_type": {
+                                "const": "one_route"
+                            }
+                        },
+                        "required": ["ticket_type"]
+                    },
+                    "then": {
+                        "required": ["route_id"]
+                    }
+                }
+            ],
+            "additionalProperties": False
         }
     }
 ]

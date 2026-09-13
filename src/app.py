@@ -30,6 +30,7 @@ from mcp_server import MCPVinBusServer
 from prompts import (
     CHATBOT_BASELINE_PROMPT,
     REACT_AGENT_SYSTEM_PROMPT,
+    OBSERVATION_SYNTHESIS_PROMPT,
     MAX_ITERATIONS
 )
 from providers import get_llm_provider
@@ -232,6 +233,84 @@ def build_final_answer(tool_name: str, observation: dict) -> str:
         f"{json.dumps(observation, ensure_ascii=False)}"
     )
 
+def synthesize_observation_with_llm(
+    provider,
+    user_query: str,
+    tool_name: str,
+    arguments: dict,
+    observation: dict
+) -> tuple[str, str]:
+    """
+    Gửi Observation trở lại LLM để tạo Final Answer.
+
+    Trả về:
+    - final_answer: câu trả lời cuối.
+    - synthesis_source: nguồn tổng hợp.
+    """
+
+    observation_prompt = (
+        "YÊU CẦU BAN ĐẦU CỦA NGƯỜI DÙNG:\n"
+        f"{user_query}\n\n"
+        "CÔNG CỤ ĐÃ GỌI:\n"
+        f"{tool_name}\n\n"
+        "THAM SỐ GỌI CÔNG CỤ:\n"
+        f"{json.dumps(arguments, ensure_ascii=False, indent=2)}"
+        "\n\n"
+        "OBSERVATION TỪ MCP SERVER:\n"
+        f"{json.dumps(observation, ensure_ascii=False, indent=2)}"
+        "\n\n"
+        "Hãy tạo câu trả lời cuối cùng cho người dùng."
+    )
+
+    try:
+        llm_answer = provider.generate(
+            observation_prompt,
+            system_prompt=OBSERVATION_SYNTHESIS_PROMPT
+        )
+
+        error_markers = [
+            "[OpenAI Exception]",
+            "[Gemini Exception]",
+            "[OpenAI Error]",
+            "[Gemini Error]"
+        ]
+
+        has_provider_error = any(
+            marker in llm_answer
+            for marker in error_markers
+        )
+
+        if (
+            not llm_answer
+            or not llm_answer.strip()
+            or has_provider_error
+        ):
+            fallback_answer = build_final_answer(
+                tool_name,
+                observation
+            )
+
+            return (
+                fallback_answer,
+                "DETERMINISTIC_FALLBACK"
+            )
+
+        return (
+            llm_answer.strip(),
+            "LLM_OBSERVATION_SYNTHESIS"
+        )
+
+    except Exception:
+        fallback_answer = build_final_answer(
+            tool_name,
+            observation
+        )
+
+        return (
+            fallback_answer,
+            "DETERMINISTIC_FALLBACK"
+        )
+    
 def run_react_agent(
     user_query: str,
     provider,
@@ -317,32 +396,62 @@ def run_react_agent(
             )
             obs_data = mcp_result.get("result", {})
             
+            synthesis_source = "NO_DATA"
+            synthesis_latency_ms = 0.0
+
             if not obs_data:
-                print("👁️ [Observation từ MCP Server]: {}")
                 print(
-                    "⚠️ MCP Server chưa trả về dữ liệu. "
-                    "Hãy hoàn thiện call_tool() trong src/mcp_server.py."
+                    "👁️ [Observation từ MCP Server]: {}"
                 )
+
+                print(
+                    "⚠️ MCP Server chưa trả về dữ liệu."
+                )
+
                 final_answer = (
                     "Chưa thể xử lý yêu cầu vì MCP Server "
                     "không trả về dữ liệu."
                 )
+
             else:
                 obs_str = json.dumps(
                     obs_data,
                     ensure_ascii=False
                 )
+
                 print(
-                    f"👁️ [Observation từ MCP Server]: {obs_str}"
+                    f"👁️ [Observation từ MCP Server]: "
+                    f"{obs_str}"
                 )
 
-                final_answer = build_final_answer(
-                    tool_name,
-                    obs_data
+                synthesis_start_time = time.time()
+
+                (
+                    final_answer,
+                    synthesis_source
+                ) = synthesize_observation_with_llm(
+                    provider=provider,
+                    user_query=user_query,
+                    tool_name=tool_name,
+                    arguments=arguments,
+                    observation=obs_data
+                )
+
+                synthesis_latency_ms = round(
+                    (
+                        time.time()
+                        - synthesis_start_time
+                    ) * 1000,
+                    2
                 )
             emit(
                 "observation",
-                f"Công cụ trả trạng thái {obs_data.get('status', 'NO_DATA') if obs_data else 'NO_DATA'}",
+                (
+                    "Công cụ trả trạng thái "
+                    f"{obs_data.get('status', 'NO_DATA')}"
+                    if obs_data
+                    else "Công cụ không trả dữ liệu"
+                ),
                 observation=obs_data
             )
             
@@ -354,7 +463,7 @@ def run_react_agent(
                 "tool_name": tool_name,
                 "arguments": arguments,
                 "observation": obs_data,
-                "latency_ms": latency_ms,
+                "decision_latency_ms": latency_ms,
                 "model": model_name,
                 "usage": usage
             })
@@ -368,17 +477,32 @@ def run_react_agent(
                 "NO_DATA"
             ) if obs_data else "NO_DATA"
 
-            final_thought = (
-                "Đã tổng hợp phản hồi từ MCP Server "
-                f"với trạng thái {final_status}."
-            )
+            if synthesis_source == "LLM_OBSERVATION_SYNTHESIS":
+                final_thought = (
+                    "Đã gửi Observation từ MCP Server "
+                    "trở lại LLM để tổng hợp câu trả lời "
+                    f"với trạng thái {final_status}."
+                )
+            elif synthesis_source == "DETERMINISTIC_FALLBACK":
+                final_thought = (
+                    "LLM không thể tổng hợp Observation. "
+                    "Hệ thống đã sử dụng bộ tổng hợp dự phòng "
+                    f"với trạng thái {final_status}."
+                )
+            else:
+                final_thought = (
+                    "MCP Server không trả về dữ liệu để "
+                    "tổng hợp câu trả lời."
+                )
             trace_logs.append({
                 "step": step + 1,
                 "query": user_query,
                 "action_type": "FINAL_ANSWER",
                 "thought": final_thought,
                 "output": final_answer,
-                "latency_ms": 10.0
+                "synthesis_source": synthesis_source,
+                "synthesis_latency_ms": synthesis_latency_ms,
+                "model": model_name
             })
             emit("final", final_answer)
             break

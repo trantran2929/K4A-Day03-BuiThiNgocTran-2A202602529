@@ -63,7 +63,7 @@ Dán 1 đoạn trích xuất log tiêu biểu từ file `docs/trace_waterfall.js
 ```
 ### Nhận xét Waterfall Trace
 
-Agent đã nhận diện đúng yêu cầu đăng ký vé tháng một tuyến và ánh xạ cụm từ “một tuyến” thành `ticket_type="one_route"`. Agent lựa chọn Tool `register_monthly_pass`, truyền đầy đủ họ tên, số điện thoại và mã tuyến E01. MCP Server trả về Observation có trạng thái `SUCCESS` và mã hồ sơ `VB-0001`. Kết quả cho thấy Native Tool Calling đã được thực hiện bằng OpenAI `gpt-4o-mini`, với token usage được ghi nhận trong trace.
+Agent đã nhận diện đúng yêu cầu đăng ký vé tháng một tuyến và ánh xạ cụm từ “một tuyến” thành `ticket_type="one_route"`. Agent lựa chọn Tool `register_monthly_pass`, truyền đầy đủ họ tên, số điện thoại và mã tuyến E01. MCP Server trả về Observation có trạng thái `SUCCESS` và mã hồ sơ `VB-0001`. Kết quả cho thấy Native Tool Calling đã được thực hiện bằng OpenAI `gpt-4o-mini`, với token usage được ghi nhận trong trace. Sau khi MCP Server trả về Observation, Agent gửi yêu cầu ban đầu, tên Tool, arguments và Observation trở lại LLM để tổng hợp Final Answer. Nếu lượt tổng hợp gặp lỗi, hệ thống sử dụng `build_final_answer()` làm phương án dự phòng. Trace ghi riêng thời gian quyết định Tool và thời gian tổng hợp câu trả lời.
 
 ---
 
