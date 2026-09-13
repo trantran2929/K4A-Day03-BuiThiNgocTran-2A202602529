@@ -3,10 +3,12 @@
 Hỗ trợ Native Tool Calling và chuyển đổi linh hoạt qua biến môi trường LLM_PROVIDER.
 """
 
+import re
 import os
 import sys
 import json
 from typing import Dict, Any, List
+from click import prompt
 from dotenv import load_dotenv
 
 if sys.stdout.encoding != 'utf-8':
@@ -27,38 +29,205 @@ class BaseLLMProvider:
 
 
 class MockOfflineProvider(BaseLLMProvider):
-    """Offline Mock Provider dùng để chạy thử mà không tốn API Key"""
+    """Offline Mock Provider dùng để kiểm thử không cần API Key."""
+
     def __init__(self):
         self.model_name = "Offline-Mock-Model-2026"
 
-    def generate(self, prompt: str, system_prompt: str = "") -> str:
-        return f"[Mock Chatbot Response]: Xin chào! Tôi đã nhận được câu hỏi '{prompt}'. (Chế độ Chatbot không có Tool tra cứu dữ liệu thời gian thực)."
+    def _is_route_query(self, prompt: str) -> bool:
+        """Nhận diện yêu cầu tra cứu tuyến hoặc chuyến xe."""
+        prompt_lower = prompt.casefold()
 
-    def generate_with_tools(self, prompt: str, tools_schema: List[Dict[str, Any]], system_prompt: str = "") -> Dict[str, Any]:
-        prompt_lower = prompt.lower()
-        
-        # Mô phỏng nhận diện intent gọi Tool
-        if "sv2026001" in prompt_lower and "đặt lịch" in prompt_lower:
-            return {
-                "type": "tool_call",
-                "tool_name": "schedule_appointment",
-                "arguments": {"student_id": "SV2026001", "datetime_str": "14:00 15/09/2026", "advisor_name": "PGS.TS Nguyễn Văn A"},
-                "thought": "Người dùng yêu cầu đặt lịch hẹn tư vấn cho sinh viên SV2026001. Tôi sẽ gọi tool schedule_appointment."
-            }
-        elif "sv2026001" in prompt_lower or "tra cứu" in prompt_lower:
-            return {
-                "type": "tool_call",
-                "tool_name": "academic_query",
-                "arguments": {"student_id": "SV2026001"},
-                "thought": "Người dùng muốn tra cứu thông tin học vụ của sinh viên SV2026001. Tôi sẽ gọi tool academic_query."
-            }
-        else:
+        route_keywords = [
+            "tìm tuyến",
+            "tìm chuyến",
+            "tra cứu tuyến",
+            "tra cứu chuyến",
+            "lộ trình",
+            "đi từ"
+        ]
+
+        return any(
+            keyword in prompt_lower
+            for keyword in route_keywords
+        )
+
+    def generate(
+        self,
+        prompt: str,
+        system_prompt: str = ""
+    ) -> str:
+        prompt_lower = prompt.casefold()
+
+        if self._is_route_query(prompt):
+            return (
+                "[Mock Chatbot Response]: "
+                "Chatbot Baseline không có công cụ tra cứu "
+                "dữ liệu tuyến xe VinBus."
+            )
+
+        if (
+            "đăng ký" in prompt_lower
+            and "vé tháng" in prompt_lower
+        ):
+            return (
+                "[Mock Chatbot Response]: "
+                "Chatbot Baseline không có công cụ "
+                "đăng ký vé tháng VinBus."
+            )
+
+        return (
+            "[Mock Chatbot Response]: "
+            "VinBus là dịch vụ xe buýt điện. "
+            "Đây là phản hồi mô phỏng ở chế độ offline."
+        )
+
+    def generate_with_tools(
+        self,
+        prompt: str,
+        tools_schema: List[Dict[str, Any]],
+        system_prompt: str = ""
+    ) -> Dict[str, Any]:
+        prompt_lower = prompt.casefold()
+
+        if (
+            "đăng ký" in prompt_lower
+            and "vé tháng" in prompt_lower
+        ):
+            return self._handle_monthly_pass(prompt)
+
+        if self._is_route_query(prompt):
+            return self._handle_route_search(prompt)
+
+        return {
+            "type": "text",
+            "content": (
+                "[Mock Agent Response]: "
+                "VinBus là dịch vụ xe buýt điện. "
+                "Tôi có thể hỗ trợ tra cứu tuyến xe "
+                "và đăng ký vé tháng."
+            ),
+            "thought": (
+                "Đây là câu hỏi chung, không cần gọi Tool."
+            )
+        }
+
+    def _handle_route_search(
+        self,
+        prompt: str
+    ) -> Dict[str, Any]:
+        match = re.search(
+            r"từ\s+(.+?)\s+đến\s+(.+?)(?:[?.!]|$)",
+            prompt,
+            flags=re.IGNORECASE
+        )
+
+        if not match:
             return {
                 "type": "text",
-                "content": f"[Mock Agent Response]: Xin chào! Quy chế học vụ VinUni yêu cầu sinh viên tích lũy tối thiểu 120 tín chỉ và duy trì GPA trên 2.0 để tốt nghiệp.",
-                "thought": "Câu hỏi chung về quy chế học vụ, trả lời trực tiếp không cần gọi Tool."
+                "content": (
+                    "Bạn vui lòng cung cấp đầy đủ "
+                    "điểm đi và điểm đến."
+                ),
+                "thought": (
+                    "Yêu cầu tra cứu còn thiếu điểm đi "
+                    "hoặc điểm đến nên chưa gọi Tool."
+                )
             }
 
+        origin = match.group(1).strip()
+        destination = match.group(2).strip()
+
+        return {
+            "type": "tool_call",
+            "tool_name": "search_bus_route",
+            "arguments": {
+                "origin": origin,
+                "destination": destination
+            },
+            "thought": (
+                "Người dùng muốn tra cứu tuyến VinBus "
+                "và đã cung cấp đủ điểm đi, điểm đến."
+            )
+        }
+
+    def _handle_monthly_pass(
+        self,
+        prompt: str
+    ) -> Dict[str, Any]:
+        prompt_lower = prompt.casefold()
+
+        ticket_type = (
+            "all_routes"
+            if "liên tuyến" in prompt_lower
+            else "one_route"
+        )
+
+        phone_match = re.search(
+            r"\b0\d{9}\b",
+            prompt
+        )
+
+        route_match = re.search(
+            r"\bE\d{2}\b",
+            prompt,
+            flags=re.IGNORECASE
+        )
+
+        name_match = re.search(
+            r"\bcho\s+(.+?)(?:,\s*(?:số điện thoại|sđt)|$)",
+            prompt,
+            flags=re.IGNORECASE
+        )
+
+        missing_fields = []
+
+        if not name_match:
+            missing_fields.append("họ và tên")
+
+        if not phone_match:
+            missing_fields.append("số điện thoại")
+
+        if (
+            ticket_type == "one_route"
+            and not route_match
+        ):
+            missing_fields.append("mã tuyến")
+
+        if missing_fields:
+            return {
+                "type": "text",
+                "content": (
+                    "Bạn vui lòng bổ sung: "
+                    + ", ".join(missing_fields)
+                    + "."
+                ),
+                "thought": (
+                    "Thông tin đăng ký chưa đầy đủ "
+                    "nên chưa gọi Tool."
+                )
+            }
+
+        arguments = {
+            "full_name": name_match.group(1).strip(),
+            "phone": phone_match.group(0),
+            "ticket_type": ticket_type
+        }
+
+        if route_match:
+            arguments["route_id"] = (
+                route_match.group(0).upper()
+            )
+
+        return {
+            "type": "tool_call",
+            "tool_name": "register_monthly_pass",
+            "arguments": arguments,
+            "thought": (
+                "Người dùng đã cung cấp đủ thông tin "
+                "để đăng ký vé tháng VinBus."
+            )
+        }
 
 class GeminiProvider(BaseLLMProvider):
     """Google Gemini Provider (Native Tool Calling với Google GenAI SDK)"""

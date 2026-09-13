@@ -1,6 +1,14 @@
 """
 🚀 CORE AGENT APPLICATION (DAY 03: CHATBOT VS REACT AGENT)
 Thực thi so sánh giữa Chatbot Baseline (Cấp 2) và ReAct Agent kết nối MCP Server (Cấp 3).
+
+So sánh:
+1. Chatbot Baseline không có công cụ.
+2. ReAct Agent sử dụng Native Tool Calling và MCP Server.
+
+Nghiệp vụ:
+- Tra cứu lộ trình tuyến xe VinBus.
+- Đăng ký vé tháng VinBus.
 """
 
 import json
@@ -17,7 +25,7 @@ if sys.stdout.encoding != 'utf-8':
     except Exception:
         pass
 
-from mcp_server import MCPAcademicServer
+from mcp_server import MCPVinBusServer
 from prompts import (
     CHATBOT_BASELINE_PROMPT,
     REACT_AGENT_SYSTEM_PROMPT,
@@ -60,8 +68,118 @@ def run_baseline_chatbot(user_query: str, provider):
     response = provider.generate(user_query, system_prompt=CHATBOT_BASELINE_PROMPT)
     print(f"🤖 Chatbot phản hồi:\n{response}")
 
+def build_final_answer(tool_name: str, observation: dict) -> str:
+    """Tổng hợp Observation của MCP Server thành câu trả lời VinBus."""
 
-def run_react_agent(user_query: str, provider, mcp_server: MCPAcademicServer) -> list:
+    status = observation.get("status")
+
+    if status == "SUCCESS":
+        if tool_name == "search_bus_route":
+            routes = observation.get("data", [])
+
+            if not routes:
+                return "Không tìm thấy tuyến VinBus phù hợp."
+
+            answer_lines = [
+                observation.get(
+                    "message",
+                    f"Tìm thấy {len(routes)} tuyến phù hợp."
+                )
+            ]
+
+            for route in routes:
+                stops = " → ".join(
+                    route.get("journey_stops", [])
+                )
+
+                answer_lines.append(
+                    (
+                        f"- Tuyến {route.get('route_id', '')}: "
+                        f"{route.get('route_name', '')}\n"
+                        f"  Lộ trình: {stops}\n"
+                        f"  Giờ hoạt động: "
+                        f"{route.get('operating_hours', 'Chưa có dữ liệu')}\n"
+                        f"  Tần suất: "
+                        f"{route.get('frequency', 'Chưa có dữ liệu')}"
+                    )
+                )
+
+            return "\n".join(answer_lines)
+
+        if tool_name == "register_monthly_pass":
+            registration = observation.get("data", {})
+
+            ticket_labels = {
+                "one_route": "Vé tháng một tuyến",
+                "all_routes": "Vé tháng liên tuyến"
+            }
+
+            ticket_type = registration.get("ticket_type", "")
+            ticket_label = ticket_labels.get(
+                ticket_type,
+                ticket_type
+            )
+
+            route_id = registration.get("route_id")
+            route_text = (
+                f"\nTuyến đăng ký: {route_id}"
+                if route_id
+                else ""
+            )
+
+            return (
+                f"{observation.get('message', 'Đăng ký thành công.')}\n"
+                f"Mã hồ sơ: "
+                f"{observation.get('registration_id', '')}\n"
+                f"Hành khách: "
+                f"{registration.get('full_name', '')}\n"
+                f"Loại vé: {ticket_label}"
+                f"{route_text}\n"
+                f"Trạng thái: "
+                f"{registration.get('application_status', '')}"
+            )
+
+        return observation.get(
+            "message",
+            "Công cụ đã xử lý yêu cầu thành công."
+        )
+
+    if status == "NOT_FOUND":
+        return observation.get(
+            "message",
+            "Không tìm thấy dữ liệu phù hợp."
+        )
+
+    if status in [
+        "INVALID_INPUT",
+        "INVALID_ARGUMENTS"
+    ]:
+        return observation.get(
+            "message",
+            observation.get(
+                "error",
+                "Thông tin đầu vào chưa hợp lệ."
+            )
+        )
+
+    if status == "UNKNOWN_TOOL":
+        return observation.get(
+            "error",
+            "Agent đã yêu cầu một công cụ không tồn tại."
+        )
+
+    if status == "EXECUTION_ERROR":
+        return (
+            "Không thể xử lý yêu cầu do lỗi công cụ: "
+            f"{observation.get('error', 'Không xác định')}"
+        )
+
+    return (
+        "Phản hồi từ công cụ: "
+        f"{json.dumps(observation, ensure_ascii=False)}"
+    )
+
+def run_react_agent(user_query: str, provider, mcp_server: MCPVinBusServer) -> list:
     """
     [REACT AGENT LOOP] Thực thi vòng lặp Thought -> Action -> Observation với MCP Server
     Trả về danh sách trace log của phiên thực thi.
@@ -106,34 +224,35 @@ def run_react_agent(user_query: str, provider, mcp_server: MCPAcademicServer) ->
             print(f"🛠️ [Action Proposed]: {tool_name}({arguments})")
             
             # Thực thi Tool qua MCP Server
-            mcp_result = mcp_server.call_tool(tool_name, arguments)
+            mcp_result = (
+                mcp_server.call_tool(tool_name, arguments)
+                or {}
+            )
             obs_data = mcp_result.get("result", {})
             
             if not obs_data:
-                print(f"👁️ [Observation từ MCP Server]: {{}}")
-                print(f"⚠️ [CHÚ Ý]: MCP Server trả về kết quả rỗng! Học viên cần hoàn thành TODO 2.1 trong 'src/mcp_server.py'.")
-                final_answer = "Chưa thể trả lời chi tiết do chưa nhận được dữ liệu từ MCP Server (hãy hoàn thành TODO 2.1)."
+                print("👁️ [Observation từ MCP Server]: {}")
+                print(
+                    "⚠️ MCP Server chưa trả về dữ liệu. "
+                    "Hãy hoàn thiện call_tool() trong src/mcp_server.py."
+                )
+                final_answer = (
+                    "Chưa thể xử lý yêu cầu vì MCP Server "
+                    "không trả về dữ liệu."
+                )
             else:
-                obs_str = json.dumps(obs_data, ensure_ascii=False)
-                print(f"👁️ [Observation từ MCP Server]: {obs_str}")
-                
-                # Tổng hợp Final Answer từ kết quả Observation thực tế
-                if obs_data.get("status") == "SUCCESS":
-                    if "data" in obs_data:
-                        d = obs_data["data"]
-                        final_answer = (
-                            f"Kết quả tra cứu cho sinh viên {obs_data.get('student_id', '')} ({d.get('full_name', '')}): "
-                            f"Lớp {d.get('class', '')}, GPA: {d.get('gpa', '')}, Email: {d.get('email', '')}, "
-                            f"Trạng thái: {d.get('status', '')}, Cố vấn: {d.get('advisor', '')}."
-                        )
-                    elif "message" in obs_data:
-                        final_answer = obs_data["message"]
-                    else:
-                        final_answer = f"Đã hoàn tất xử lý qua MCP Server: {json.dumps(obs_data, ensure_ascii=False)}"
-                elif obs_data.get("status") == "NOT_FOUND":
-                    final_answer = obs_data.get("message", "Không tìm thấy thông tin sinh viên yêu cầu.")
-                else:
-                    final_answer = f"Phản hồi từ công cụ: {json.dumps(obs_data, ensure_ascii=False)}"
+                obs_str = json.dumps(
+                    obs_data,
+                    ensure_ascii=False
+                )
+                print(
+                    f"👁️ [Observation từ MCP Server]: {obs_str}"
+                )
+
+                final_answer = build_final_answer(
+                    tool_name,
+                    obs_data
+                )
             
             trace_logs.append({
                 "step": step,
@@ -148,12 +267,21 @@ def run_react_agent(user_query: str, provider, mcp_server: MCPAcademicServer) ->
             # Kết thúc vòng lặp sau khi hoàn tất Observation và xuất Final Answer
             print(f"🧠 [Thought]: Đã nhận được dữ liệu từ MCP Server. Tổng hợp kết quả phản hồi.")
             print(f"🏁 [Final Answer]: {final_answer}")
-            
+
+            final_status = obs_data.get(
+                "status",
+                "NO_DATA"
+            ) if obs_data else "NO_DATA"
+
+            final_thought = (
+                "Đã tổng hợp phản hồi từ MCP Server "
+                f"với trạng thái {final_status}."
+            )
             trace_logs.append({
                 "step": step + 1,
                 "query": user_query,
                 "action_type": "FINAL_ANSWER",
-                "thought": "Tổng hợp kết quả từ MCP Server thành công.",
+                "thought": final_thought,
                 "output": final_answer,
                 "latency_ms": 10.0
             })
@@ -164,11 +292,12 @@ def run_react_agent(user_query: str, provider, mcp_server: MCPAcademicServer) ->
 
 if __name__ == "__main__":
     print("==========================================================")
-    print("🏫 VINUNI AI COURSE - DAY 03 LAB: CHATBOT VS REACT AGENT")
+    print("🚌 TRỢ LÝ DỊCH VỤ KHÁCH HÀNG VINBUS")
+    print("CHATBOT BASELINE VS REACT AGENT")
     print("==========================================================")
     
     provider = get_llm_provider()
-    mcp_server = MCPAcademicServer()
+    mcp_server = MCPVinBusServer()
     
     print(f"🔌 LLM Provider: {provider.__class__.__name__}")
     print(f"🌐 MCP Server: {mcp_server.server_name}\n")
@@ -177,17 +306,27 @@ if __name__ == "__main__":
     print(f"✅ Đã tải thành công {len(tests)} Test Cases thử nghiệm.\n")
     
     if "--interactive" in sys.argv:
-        print("🎮 [INTERACTIVE MODE] Trò chuyện trực tiếp với ReAct Agent:")
-        print("💡 Gợi ý câu hỏi thử nghiệm:")
-        print("   - Câu hỏi chung: 'Quy chế học vụ VinUni yêu cầu bao nhiêu tín chỉ?'")
-        print("   - Tra cứu học vụ: 'Hãy tra cứu thông tin học vụ của sinh viên SV2026001'")
-        print("   - Đặt lịch hẹn: 'Đặt lịch hẹn tư vấn cho SV2026001 vào 14:00 ngày 15/09/2026'")
-        print("   - Gõ 'exit' hoặc 'quit' để kết thúc phiên trò chuyện.\n")
+        print("🎮 [INTERACTIVE MODE] Trò chuyện với trợ lý VinBus:")
+        print("💡 Gợi ý câu hỏi:")
+        print(
+            "   - Câu hỏi chung: "
+            "'VinBus sử dụng loại phương tiện nào?'"
+        )
+        print(
+            "   - Tra cứu tuyến: "
+            "'Tìm tuyến từ VinUni đến Bến xe Mỹ Đình'"
+        )
+        print(
+            "   - Đăng ký vé: "
+            "'Đăng ký vé tháng một tuyến E01 cho "
+            "Nguyễn Văn An, số điện thoại 0912345678'"
+        )
+        print("   - Gõ 'exit' hoặc 'quit' để kết thúc.\n")
         while True:
             try:
-                user_input = input("👤 Sinh viên hỏi: ").strip()
+                user_input = input("👤 Hành khách hỏi: ").strip()
                 if not user_input or user_input.lower() in ["exit", "quit"]:
-                    print("👋 Tạm biệt! Kết thúc phiên trò chuyện.")
+                    print("\n👋 Cảm ơn bạn đã sử dụng trợ lý VinBus.")
                     break
                 logs = run_react_agent(user_input, provider, mcp_server)
                 save_waterfall_trace(logs)
@@ -227,7 +366,21 @@ if __name__ == "__main__":
         print("  2. Chạy toàn bộ Test Cases:    python src/app.py --all\n")
         
         sample_query = tests[1]["question"]
-        print(f"--- 🏁 DEMO CHẠY THỬ 1 TEST CASE MẪU (TC02: Tra cứu học vụ) ---")
-        logs = run_react_agent(sample_query, provider, mcp_server)
+
+        print(
+            "--- 🏁 DEMO TEST CASE TRA CỨU TUYẾN VINBUS ---"
+        )
+
+        logs = run_react_agent(
+            sample_query,
+            provider,
+            mcp_server
+        )
+
         save_waterfall_trace(logs)
-        print("\n💡 Hãy thử ngay lệnh: python src/app.py --interactive để chat trực tiếp!")
+
+        print(
+            "\n💡 Chạy 'python src/app.py --interactive' "
+            "để trò chuyện trực tiếp."
+        )
+        

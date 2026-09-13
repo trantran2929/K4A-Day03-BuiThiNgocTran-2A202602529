@@ -1,0 +1,37 @@
+[
+  {
+    "id": "TC01",
+    "type": "direct_query",
+    "question": "VinBus sử dụng loại phương tiện nào?",
+    "expected_behavior": "Agent trả lời trực tiếp về xe buýt điện VinBus và không gọi Tool.",
+    "complexity": "Low"
+  },
+  {
+    "id": "TC02",
+    "type": "route_search_success",
+    "question": "Tìm tuyến VinBus từ VinUni đến Bến xe Mỹ Đình.",
+    "expected_behavior": "Agent gọi Tool search_bus_route với origin là VinUni và destination là Bến xe Mỹ Đình; Tool trả về tuyến E01.",
+    "complexity": "Medium"
+  },
+  {
+    "id": "TC03",
+    "type": "monthly_pass_registration",
+    "question": "Đăng ký vé tháng một tuyến E01 cho Nguyễn Văn An, số điện thoại 0912345678.",
+    "expected_behavior": "Agent gọi Tool register_monthly_pass với đầy đủ họ tên, số điện thoại, ticket_type one_route và route_id E01; Tool trả mã hồ sơ.",
+    "complexity": "Medium"
+  },
+  {
+    "id": "TC04",
+    "type": "dynamic_optional_parameter",
+    "question": "Đăng ký vé tháng liên tuyến cho Trần Thị Bình, số điện thoại 0987654321.",
+    "expected_behavior": "Agent gọi Tool register_monthly_pass với ticket_type all_routes và không yêu cầu route_id.",
+    "complexity": "High"
+  },
+  {
+    "id": "TC05",
+    "type": "edge_case_handling",
+    "question": "Tìm tuyến VinBus từ VinUni đến KĐT Smart City.",
+    "expected_behavior": "Agent gọi Tool search_bus_route; Tool trả NOT_FOUND và Agent thông báo lịch sự, không tự tạo tuyến.",
+    "complexity": "Medium"
+  }
+]

@@ -13,39 +13,77 @@ from typing import Dict, Any
 TOOLS_SCHEMA = [
     # Tool 1: Đã được định nghĩa mẫu sẵn cho Học viên tham khảo
     {
-        "name": "academic_query",
-        "description": "Tra cứu hồ sơ và thông tin học vụ của sinh viên VinUni bằng mã sinh viên.",
+        "name": "search_bus_route",
+        "description": (
+            "Tra cứu tuyến xe buýt phù hợp dựa theo điểm đi và điểm đến của hành khách." 
+        ),
         "parameters": {
             "type": "object",
             "properties": {
-                "student_id": {
+                "origin": {
                     "type": "string",
-                    "description": "Mã sinh viên cần tra cứu (ví dụ: 'SV2026001')"
+                    "description": (
+                         "Điểm xuất phát của hành khách, ví dụ: 'VinUni'."
+                    )
+                },
+                "destination": {
+                    "type": "string",
+                    "description": (
+                        "Điểm đến của hành khách, ví dụ: 'Bến xe Mỹ Đình'."
+                    )
                 }
             },
-            "required": ["student_id"]
+            "required": ["origin", "destination"]
         }
     },
     
-    # --------------------------------------------------------------------------
-    # TODO 1.2: HỌC VIÊN HOÀN THIỆN TOOL SCHEMA CHO 'schedule_appointment'
-    # 🎯 YÊU CẦU THIẾT KẾ SCHEMA (JSON SCHEMA STANDARD):
-    # 1. Tool dùng để đặt lịch hẹn tư vấn học vụ với Cố vấn học tập VinUni.
-    # 2. Thiết kế các tham số (properties) để LLM trích xuất:
-    #    - student_id (string): Mã sinh viên cần đặt lịch (ví dụ: 'SV2026001')
-    #    - datetime_str (string): Thời gian hẹn (ví dụ: '14:00 15/09/2026')
-    #    - advisor_name (string): Tên cố vấn học tập
-    # 3. Khai báo danh sách các trường bắt buộc (required).
-    # --------------------------------------------------------------------------
+# --------------------------------------------------------------------------
+# TODO TOOL 2: ĐĂNG KÝ VÉ THÁNG VINBUS
+# Các tham số:
+# - full_name: Họ tên hành khách
+# - phone: Số điện thoại
+# - ticket_type: Loại vé tháng
+# - route_id: Mã tuyến, bắt buộc với vé một tuyến
+# --------------------------------------------------------------------------
     {
-        "name": "schedule_appointment",
-        "description": "Đặt lịch hẹn tư vấn học vụ với Cố vấn học tập VinUni.",
+        "name": "register_monthly_pass",
+        "description": (
+            "Đăng ký vé tháng Vinbus sau khi hành khách đã cung cấp đủ thông tin."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
-                # TODO 1.2: Khai báo các thuộc tính tham số cho Tool tại đây...
+                "full_name": {
+                    "type": "string",
+                    "description": (
+                        "Họ và tên hành khách, ví dụ: 'Nguyễn Văn A'."
+                    )
+                },
+                "phone": {
+                    "type": "string",
+                    "description": (
+                        "Số điện thoại hành khách."
+                    )
+                },
+                "ticket_type": {
+                    "type": "string",
+                    "description": (
+                        "Loại vé tháng: one_route là vé một tuyến, "
+                        "all_routes là vé liên tuyến."
+                    ),
+                    "enum": ["one_route", "all_routes"]
+                },
+                "route_id":{
+                    "type": "string",
+                    "description": (
+                        "Mã tuyến xe, ví dụ: 'E01'. "
+                        "Bắt buộc đối với loại vé one_route, không bắt buộc với loại vé all_routes."
+                    )
+                }
             },
-            "required": [] # TODO 1.2: Khai báo danh sách các trường bắt buộc tại đây...
+            "required": [
+                "full_name", "phone", "ticket_type"
+            ] 
         }
     }
 ]
@@ -54,65 +92,216 @@ TOOLS_SCHEMA = [
 # 2. MÔ PHỎNG DỮ LIỆU & HÀM THỰC THI TOOL (EXECUTION LAYER)
 # ==============================================================================
 
-MOCK_DATABASE = {
-    "SV2026001": {
-        "full_name": "Nguyễn Văn An",
-        "class": "AI-K4",
-        "gpa": 3.85,
-        "email": "an.nv@vinuni.edu.vn",
-        "status": "Đang học",
-        "advisor": "PGS.TS Nguyễn Văn A"
+MOCK_DATABASE = [
+    {
+        "route_id": "E01",
+        "route_name": "VinUni - Bến xe Mỹ Đình",
+        "stops": ["VinUni", "Cầu Giấy", "Bến xe Mỹ Đình"],
+        "operating_hours": "05:00 - 21:00",
+        "frequency": "15 phút/lượt"
     },
-    "SV2026002": {
-        "full_name": "Trần Thị Bình",
-        "class": "AI-K4",
-        "gpa": 3.60,
-        "email": "binh.tt@vinuni.edu.vn",
-        "status": "Đang học",
-        "advisor": "TS. Lê Thị B"
+    {
+        "route_id": "E02",
+        "route_name": "VinUni - Bến xe Giáp Bát",
+        "stops": ["VinUni", "Ngã Tư Sở", "Bến xe Giáp Bát"],
+        "operating_hours": "05:00 - 21:00",
+        "frequency": "15 phút/lượt"
+    },
+    {
+        "route_id": "E03",
+        "route_name": "VinUni - Bến xe Yên Nghĩa",
+        "stops": ["VinUni", "Hà Đông", "Bến xe Yên Nghĩa"],
+        "operating_hours": "05:00 - 21:00",
+        "frequency": "15 phút/lượt"
     }
-}
+]
 
+MOCK_REGISTRATIONS = []
 
-def execute_academic_query(student_id: str) -> str:
-    """Thực thi tra cứu học vụ theo mã sinh viên"""
-    student = MOCK_DATABASE.get(student_id.strip().upper())
-    if student:
+def normalize_text(value:str) -> str:
+    """Chuẩn hóa chuỗi để so sánh không phân biệt chữ hoa, chữ thường."""
+    return value.strip().casefold()
+
+def execute_search_bus_route(
+    origin: str,
+    destination: str
+) -> str:
+    """Tra cứu tuyến VinBus có chứa điểm đi và điểm đến đúng thứ tự."""
+
+    if not origin.strip() or not destination.strip():
+        return json.dumps({
+            "status": "INVALID_INPUT",
+            "message": "Điểm đi và điểm đến không được để trống."
+        }, ensure_ascii=False)
+
+    normalized_origin = normalize_text(origin)
+    normalized_destination = normalize_text(destination)
+    matched_routes = []
+
+    for route in MOCK_DATABASE:
+        normalized_stops = [
+            normalize_text(stop)
+            for stop in route["stops"]
+        ]
+
+        if (
+            normalized_origin in normalized_stops
+            and normalized_destination in normalized_stops
+        ):
+            origin_index = normalized_stops.index(normalized_origin)
+            destination_index = normalized_stops.index(
+                normalized_destination
+            )
+
+            if origin_index < destination_index:
+                journey_stops = route["stops"][
+                    origin_index:destination_index + 1
+                ]
+
+                matched_routes.append({
+                    "route_id": route["route_id"],
+                    "route_name": route["route_name"],
+                    "origin": origin,
+                    "destination": destination,
+                    "journey_stops": journey_stops,
+                    "operating_hours": route["operating_hours"],
+                    "frequency": route["frequency"]
+                })
+
+    if matched_routes:
         return json.dumps({
             "status": "SUCCESS",
-            "student_id": student_id,
-            "data": student
-        }, ensure_ascii=False)
-    else:
-        return json.dumps({
-            "status": "NOT_FOUND",
-            "message": f"Không tìm thấy dữ liệu sinh viên có mã '{student_id}'"
+            "message": (
+                f"Tìm thấy {len(matched_routes)} tuyến phù hợp."
+            ),
+            "data": matched_routes
         }, ensure_ascii=False)
 
-
-def execute_schedule_appointment(student_id: str, datetime_str: str, advisor_name: str = "PGS.TS Nguyễn Văn A") -> str:
-    """Thực thi đặt lịch hẹn tư vấn học vụ"""
     return json.dumps({
-        "status": "SUCCESS",
-        "booking_id": f"BK-{student_id}-99",
-        "student_id": student_id,
-        "datetime": datetime_str,
-        "advisor": advisor_name,
-        "message": f"Đặt lịch thành công cho sinh viên {student_id} với {advisor_name} vào lúc {datetime_str}."
+        "status": "NOT_FOUND",
+        "message": (
+            f"Không tìm thấy tuyến VinBus trực tiếp "
+            f"từ '{origin}' đến '{destination}'."
+        )
     }, ensure_ascii=False)
 
+def is_valid_phone(phone: str) -> bool:
+    """Kiểm tra số điện thoại Việt Nam ở mức cơ bản."""
+    normalized_phone = phone.strip().replace(" ", "")
+
+    return (
+        normalized_phone.isdigit()
+        and normalized_phone.startswith("0")
+        and len(normalized_phone) == 10
+    )
+
+def execute_register_monthly_pass(
+    full_name: str,
+    phone: str,
+    ticket_type: str,
+    route_id: str = ""
+) -> str:
+    """Mô phỏng đăng ký vé tháng VinBus."""
+
+    full_name = full_name.strip()
+    phone = phone.strip().replace(" ", "")
+    ticket_type = ticket_type.strip().lower()
+    route_id = route_id.strip().upper()
+
+    if not full_name:
+        return json.dumps({
+            "status": "INVALID_INPUT",
+            "message": "Họ và tên không được để trống."
+        }, ensure_ascii=False)
+
+    if not is_valid_phone(phone):
+        return json.dumps({
+            "status": "INVALID_INPUT",
+            "message": (
+                "Số điện thoại phải gồm 10 chữ số "
+                "và bắt đầu bằng số 0."
+            )
+        }, ensure_ascii=False)
+
+    if ticket_type not in ["one_route", "all_routes"]:
+        return json.dumps({
+            "status": "INVALID_INPUT",
+            "message": (
+                "Loại vé phải là 'one_route' hoặc 'all_routes'."
+            )
+        }, ensure_ascii=False)
+
+    if ticket_type == "one_route":
+        if not route_id:
+            return json.dumps({
+                "status": "INVALID_INPUT",
+                "message": (
+                    "Vé một tuyến yêu cầu cung cấp mã tuyến."
+                )
+            }, ensure_ascii=False)
+
+        valid_route_ids = {
+            route["route_id"]
+            for route in MOCK_DATABASE
+        }
+
+        if route_id not in valid_route_ids:
+            return json.dumps({
+                "status": "NOT_FOUND",
+                "message": (
+                    f"Không tìm thấy tuyến có mã '{route_id}'."
+                )
+            }, ensure_ascii=False)
+
+    registration_id = (
+        f"VB-{len(MOCK_REGISTRATIONS) + 1:04d}"
+    )
+
+    registration = {
+        "registration_id": registration_id,
+        "full_name": full_name,
+        "phone": phone,
+        "ticket_type": ticket_type,
+        "route_id": route_id if route_id else None,
+        "application_status": "RECEIVED"
+    }
+
+    MOCK_REGISTRATIONS.append(registration)
+
+    return json.dumps({
+        "status": "SUCCESS",
+        "registration_id": registration_id,
+        "message": "Đăng ký vé tháng VinBus thành công.",
+        "data": registration
+    }, ensure_ascii=False)
 
 # Router gọi tool thực tế
 TOOL_ROUTER = {
-    "academic_query": execute_academic_query,
-    "schedule_appointment": execute_schedule_appointment
+    "search_bus_route": execute_search_bus_route,
+    "register_monthly_pass": execute_register_monthly_pass
 }
 
-def dispatch_tool_call(tool_name: str, arguments: Dict[str, Any]) -> str:
-    """Hàm trung chuyển thực thi tool"""
-    if tool_name in TOOL_ROUTER:
-        try:
-            return TOOL_ROUTER[tool_name](**arguments)
-        except Exception as e:
-            return json.dumps({"status": "EXECUTION_ERROR", "error": str(e)}, ensure_ascii=False)
-    return json.dumps({"status": "UNKNOWN_TOOL", "error": f"Tool '{tool_name}' không tồn tại!"}, ensure_ascii=False)
+def dispatch_tool_call(
+    tool_name: str,
+    arguments: Dict[str, Any]
+) -> str:
+    """Chuyển yêu cầu gọi tool đến hàm thực thi tương ứng."""
+
+    if tool_name not in TOOL_ROUTER:
+        return json.dumps({
+            "status": "UNKNOWN_TOOL",
+            "error": f"Tool '{tool_name}' không tồn tại."
+        }, ensure_ascii=False)
+
+    try:
+        return TOOL_ROUTER[tool_name](**arguments)
+    except TypeError as error:
+        return json.dumps({
+            "status": "INVALID_ARGUMENTS",
+            "error": str(error)
+        }, ensure_ascii=False)
+    except Exception as error:
+        return json.dumps({
+            "status": "EXECUTION_ERROR",
+            "error": str(error)
+        }, ensure_ascii=False)
