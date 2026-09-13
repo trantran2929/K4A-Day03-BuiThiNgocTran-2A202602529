@@ -90,7 +90,7 @@ TOOLS_SCHEMA = [
             "required": [
                 "full_name", "phone", "ticket_type"
             ],
-            "allof": [
+            "allOf": [
                 {
                     "if": {
                         "properties": {
